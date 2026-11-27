@@ -1,0 +1,40 @@
+// Apigee X shared flow pipeline. Parameters: BRANCH, ARTIFACT_NAME, ARTIFACT_PATH (…/sharedflowbundle), APIGEE_ENV, APIGEE_ORG
+pipeline {
+  agent { label 'apigee' }
+  options { timestamps(); timeout(time: 20, unit: 'MINUTES'); disableConcurrentBuilds() }
+  environment {
+    APIGEE_API = 'https://apigee.googleapis.com/v1'
+    GOOGLE_APPLICATION_CREDENTIALS = credentials('apigee-deployer-sa')
+  }
+  stages {
+    stage('Auth') {
+      steps { sh 'gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" --quiet && gcloud auth print-access-token > .token' }
+    }
+    stage('Lint') {
+      steps { sh 'npx --yes apigeelint@2 -s "$ARTIFACT_PATH" -f table.js --profile apigeex --maxErrors 0' }
+    }
+    stage('Import & Deploy') {
+      steps {
+        sh '''
+          rm -f sf.zip
+          (cd "$(dirname "$ARTIFACT_PATH")" && zip -qr "$WORKSPACE/sf.zip" sharedflowbundle)
+          REV=$(curl -sfS -X POST -H "Authorization: Bearer $(cat .token)" -F "file=@sf.zip" \
+            "$APIGEE_API/organizations/$APIGEE_ORG/sharedflows?name=$ARTIFACT_NAME&action=import" | jq -r .revision)
+          SA_PARAM=""
+          [ -n "${PROXY_SERVICE_ACCOUNT:-}" ] && SA_PARAM="&serviceAccount=$PROXY_SERVICE_ACCOUNT"
+          curl -sfS -X POST -H "Authorization: Bearer $(cat .token)" \
+            "$APIGEE_API/organizations/$APIGEE_ORG/environments/$APIGEE_ENV/sharedflows/$ARTIFACT_NAME/revisions/$REV/deployments?override=true$SA_PARAM"
+          for i in $(seq 1 60); do
+            STATE=$(curl -sfS -H "Authorization: Bearer $(cat .token)" \
+              "$APIGEE_API/organizations/$APIGEE_ORG/environments/$APIGEE_ENV/sharedflows/$ARTIFACT_NAME/revisions/$REV/deployments" | jq -r .state)
+            [ "$STATE" = "READY" ] && exit 0
+            [ "$STATE" = "ERROR" ] && exit 1
+            sleep 10
+          done
+          exit 1
+        '''
+      }
+    }
+  }
+  post { always { sh 'rm -f .token' } }
+}

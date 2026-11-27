@@ -1,0 +1,66 @@
+// Apigee X proxy pipeline – lint, bundle, import, deploy, wait, smoke test.
+// Parameters (set by the portal-generated job): BRANCH, ARTIFACT_NAME, ARTIFACT_PATH, APIGEE_ENV, APIGEE_ORG,
+// PROXY_SERVICE_ACCOUNT (optional – needed for Google-authenticated backends and Cloud Logging)
+// Agent requirements: gcloud, jq, zip, curl, node (apigeelint)
+pipeline {
+  agent { label 'apigee' }
+  options { timestamps(); timeout(time: 30, unit: 'MINUTES'); disableConcurrentBuilds() }
+  environment {
+    APIGEE_API = 'https://apigee.googleapis.com/v1'
+    GOOGLE_APPLICATION_CREDENTIALS = credentials('apigee-deployer-sa')   // secret file credential
+  }
+  stages {
+    stage('Auth') {
+      steps {
+        sh '''
+          gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          gcloud auth print-access-token > .token
+        '''
+      }
+    }
+    stage('Lint') {
+      steps {
+        sh '''
+          npx --yes apigeelint@2 -s "$ARTIFACT_PATH" -f table.js --profile apigeex --excluded BN003 --maxErrors 0
+        '''
+      }
+    }
+    stage('Bundle & Import') {
+      steps {
+        sh '''
+          rm -f bundle.zip
+          (cd "$(dirname "$ARTIFACT_PATH")" && zip -qr "$WORKSPACE/bundle.zip" apiproxy)
+          curl -sfS -X POST -H "Authorization: Bearer $(cat .token)" -F "file=@bundle.zip" \
+            "$APIGEE_API/organizations/$APIGEE_ORG/apis?name=$ARTIFACT_NAME&action=import" > import.json
+          jq -r .revision import.json > .revision
+          echo "Imported revision $(cat .revision)"
+        '''
+      }
+    }
+    stage('Deploy') {
+      steps {
+        sh '''
+          REV=$(cat .revision)
+          SA_PARAM=""
+          [ -n "${PROXY_SERVICE_ACCOUNT:-}" ] && SA_PARAM="&serviceAccount=$PROXY_SERVICE_ACCOUNT"
+          curl -sfS -X POST -H "Authorization: Bearer $(cat .token)" \
+            "$APIGEE_API/organizations/$APIGEE_ORG/environments/$APIGEE_ENV/apis/$ARTIFACT_NAME/revisions/$REV/deployments?override=true$SA_PARAM"
+          for i in $(seq 1 60); do
+            STATE=$(curl -sfS -H "Authorization: Bearer $(cat .token)" \
+              "$APIGEE_API/organizations/$APIGEE_ORG/environments/$APIGEE_ENV/apis/$ARTIFACT_NAME/revisions/$REV/deployments" | jq -r .state)
+            echo "deployment state: $STATE"
+            [ "$STATE" = "READY" ] && exit 0
+            [ "$STATE" = "ERROR" ] && exit 1
+            sleep 10
+          done
+          exit 1
+        '''
+      }
+    }
+    stage('Smoke test') {
+      when { expression { fileExists("tests/smoke/${params.ARTIFACT_NAME}.sh") } }
+      steps { sh 'bash "tests/smoke/$ARTIFACT_NAME.sh" "$APIGEE_ENV"' }
+    }
+  }
+  post { always { sh 'rm -f .token' } }
+}

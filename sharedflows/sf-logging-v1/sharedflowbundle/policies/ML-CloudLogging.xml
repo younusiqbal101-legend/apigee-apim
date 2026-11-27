@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<MessageLogging continueOnError="true" enabled="true" name="ML-CloudLogging">
+  <CloudLogging>
+    <LogName>projects/{organization.name}/logs/apigee-api-transactions</LogName>
+    <Message contentType="application/json">{"correlationId":"{request.header.X-Correlation-ID}","proxy":"{apiproxy.name}","revision":"{apiproxy.revision}","environment":"{environment.name}","clientId":"{client_id}","app":"{developer.app.name}","verb":"{request.verb}","path":"{proxy.pathsuffix}","status":"{message.status.code}","targetStatus":"{response.status.code}","timestamp":"{system.timestamp}","clientIp":"{proxy.client.ip}"}</Message>
+    <Labels>
+      <Label><Key>proxy</Key><Value>{apiproxy.name}</Value></Label>
+      <Label><Key>environment</Key><Value>{environment.name}</Value></Label>
+    </Labels>
+    <ResourceType>api</ResourceType>
+  </CloudLogging>
+</MessageLogging>

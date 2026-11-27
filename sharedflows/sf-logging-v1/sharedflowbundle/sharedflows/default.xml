@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- Requires the proxy to be deployed with a service account that has roles/logging.logWriter
+     (portal setting APIGEE_PROXY_SERVICE_ACCOUNT). -->
+<SharedFlow name="default">
+  <Step><Name>ML-CloudLogging</Name></Step>
+</SharedFlow>

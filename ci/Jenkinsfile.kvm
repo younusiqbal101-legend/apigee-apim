@@ -1,0 +1,44 @@
+// Creates the KVM (if missing) and upserts entries from kvms/<env>/<name>.json.
+// Secret entries ({"valueFrom":{"secretManager":"projects/.../versions/N"}}) are resolved from Google Secret Manager
+// at deploy time – secret values never live in git or Jenkins logs.
+pipeline {
+  agent { label 'apigee' }
+  options { timestamps(); timeout(time: 10, unit: 'MINUTES') }
+  environment {
+    APIGEE_API = 'https://apigee.googleapis.com/v1'
+    GOOGLE_APPLICATION_CREDENTIALS = credentials('apigee-deployer-sa')
+  }
+  stages {
+    stage('Apply KVM') {
+      steps {
+        sh '''
+          set +x
+          gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          TOKEN=$(gcloud auth print-access-token)
+          BASE="$APIGEE_API/organizations/$APIGEE_ORG/environments/$APIGEE_ENV/keyvaluemaps"
+          ENCRYPTED=$(jq -r '.encrypted' "$ARTIFACT_PATH")
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+            --data "{\\"name\\":\\"$ARTIFACT_NAME\\",\\"encrypted\\":$ENCRYPTED}" "$BASE")
+          echo "create KVM -> $CODE (409 = already exists)"
+          jq -c '.entries[]' "$ARTIFACT_PATH" | while read -r e; do
+            KEY=$(echo "$e" | jq -r .name)
+            REF=$(echo "$e" | jq -r '.valueFrom.secretManager // empty')
+            if [ -n "$REF" ]; then
+              SECRET=$(echo "$REF" | sed -E 's#projects/[^/]+/secrets/([^/]+)/versions/([^/]+)#\\1 \\2#')
+              VALUE=$(gcloud secrets versions access "$(echo $SECRET | cut -d' ' -f2)" --secret="$(echo $SECRET | cut -d' ' -f1)")
+            else
+              VALUE=$(echo "$e" | jq -r .value)
+            fi
+            BODY=$(jq -n --arg n "$KEY" --arg v "$VALUE" '{name:$n, value:$v}')
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+              --data "$BODY" "$BASE/$ARTIFACT_NAME/entries/$KEY")
+            if [ "$CODE" = "404" ]; then
+              curl -sfS -o /dev/null -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data "$BODY" "$BASE/$ARTIFACT_NAME/entries"
+            fi
+            echo "entry $KEY applied"
+          done
+        '''
+      }
+    }
+  }
+}

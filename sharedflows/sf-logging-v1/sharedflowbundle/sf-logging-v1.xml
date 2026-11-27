@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<SharedFlowBundle name="sf-logging-v1">
+  <DisplayName>sf-logging-v1</DisplayName>
+  <Description>Structured transaction log to Cloud Logging (no payloads, no personal data). Attach in proxy PostFlow.</Description>
+</SharedFlowBundle>

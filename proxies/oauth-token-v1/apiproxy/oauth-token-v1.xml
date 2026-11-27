@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<APIProxy name="oauth-token-v1">
+  <DisplayName>oauth-token-v1</DisplayName>
+  <Description>Platform OAuth 2.0 token endpoint (client_credentials). Deployed once per environment.</Description>
+</APIProxy>

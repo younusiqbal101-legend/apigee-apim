@@ -1,0 +1,28 @@
+// Creates or updates an Apigee X target server from targetservers/<env>/<name>.json
+// Parameters: BRANCH, ARTIFACT_NAME, ARTIFACT_PATH, APIGEE_ENV, APIGEE_ORG
+pipeline {
+  agent { label 'apigee' }
+  options { timestamps(); timeout(time: 10, unit: 'MINUTES') }
+  environment {
+    APIGEE_API = 'https://apigee.googleapis.com/v1'
+    GOOGLE_APPLICATION_CREDENTIALS = credentials('apigee-deployer-sa')
+  }
+  stages {
+    stage('Apply target server') {
+      steps {
+        sh '''
+          gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          TOKEN=$(gcloud auth print-access-token)
+          BASE="$APIGEE_API/organizations/$APIGEE_ORG/environments/$APIGEE_ENV/targetservers"
+          jq -e '.name and .host and .port' "$ARTIFACT_PATH" > /dev/null
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/$ARTIFACT_NAME")
+          if [ "$CODE" = "200" ]; then
+            curl -sfS -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data @"$ARTIFACT_PATH" "$BASE/$ARTIFACT_NAME"
+          else
+            curl -sfS -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' --data @"$ARTIFACT_PATH" "$BASE"
+          fi
+        '''
+      }
+    }
+  }
+}

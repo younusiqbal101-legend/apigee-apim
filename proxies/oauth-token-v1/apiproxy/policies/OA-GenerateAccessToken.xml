@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!-- client_id / client_secret are read from the HTTP Basic Authorization header (RFC 6749 §2.3.1). -->
+<OAuthV2 continueOnError="false" enabled="true" name="OA-GenerateAccessToken">
+  <Operation>GenerateAccessToken</Operation>
+  <ExpiresIn>900000</ExpiresIn>
+  <SupportedGrantTypes>
+    <GrantType>client_credentials</GrantType>
+  </SupportedGrantTypes>
+  <GrantType>request.formparam.grant_type</GrantType>
+  <Scope>request.formparam.scope</Scope>
+  <GenerateResponse enabled="true"/>
+</OAuthV2>

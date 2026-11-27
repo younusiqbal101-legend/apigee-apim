@@ -1,0 +1,37 @@
+// Rebuilds the load balancer mTLS trust configuration (Certificate Manager TrustConfig) used by the Apigee X
+// northbound HTTPS load balancer (ServerTlsPolicy with clientValidationMode=REJECT_INVALID) from every approved
+// partner certificate in truststore/<env>/*.pem (allowlisted certificates) and truststore/<env>/ca/*.pem (trust anchors).
+// Parameters: BRANCH, APIGEE_ENV, CERT_PATH   |  Job name: apigee-truststore (single shared job)
+pipeline {
+  agent { label 'apigee' }
+  options { timestamps(); timeout(time: 15, unit: 'MINUTES'); disableConcurrentBuilds() }
+  environment {
+    GOOGLE_APPLICATION_CREDENTIALS = credentials('apigee-network-sa')
+    LOCATION = 'global'
+  }
+  stages {
+    stage('Validate certificate') {
+      steps { sh 'openssl x509 -in "$CERT_PATH" -noout -subject -enddate -checkend 0' }
+    }
+    stage('Import trust config') {
+      steps {
+        sh '''
+          gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          PROJECT=$(gcloud config get-value project)
+          TRUST_CONFIG="apigee-$APIGEE_ENV-partners"
+          for f in truststore/$APIGEE_ENV/*.pem; do jq -Rs '{pemCertificate: .}' "$f"; done > allow.jsonl
+          : > anchors.jsonl
+          if ls truststore/$APIGEE_ENV/ca/*.pem >/dev/null 2>&1; then
+            for f in truststore/$APIGEE_ENV/ca/*.pem; do jq -Rs '{pemCertificate: .}' "$f"; done > anchors.jsonl
+          fi
+          jq -n --arg name "projects/$PROJECT/locations/$LOCATION/trustConfigs/$TRUST_CONFIG" \
+                --slurpfile allow allow.jsonl --slurpfile anchors anchors.jsonl \
+                '{name: $name, allowlistedCertificates: $allow}
+                 + (if ($anchors | length) > 0 then {trustStores: [{trustAnchors: $anchors}]} else {} end)' > trust-config.json
+          gcloud certificate-manager trust-configs import "$TRUST_CONFIG" --location="$LOCATION" --source=trust-config.json
+        '''
+      }
+    }
+  }
+  post { always { sh 'rm -f allow.jsonl anchors.jsonl trust-config.json' } }
+}

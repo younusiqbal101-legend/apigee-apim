@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Certificate-bound access tokens for partner mTLS.
+  The northbound load balancer forwards the verified client certificate fingerprint as custom request header
+  X-Client-Cert-Hash ({client_cert_sha256_fingerprint}); the app carries attribute certFingerprint registered at onboarding.
+-->
+<SharedFlow name="default">
+  <Step><Name>AE-GetApp</Name></Step>
+  <Step><Name>EV-AppCertFingerprint</Name></Step>
+  <Step><Name>JS-NormalizeFingerprints</Name></Step>
+  <Step>
+    <Name>RF-CertMismatch</Name>
+    <Condition>mtls.expected.fingerprint = null or mtls.presented.fingerprint != mtls.expected.fingerprint</Condition>
+  </Step>
+</SharedFlow>

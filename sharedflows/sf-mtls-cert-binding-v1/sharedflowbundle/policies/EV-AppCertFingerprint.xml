@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ExtractVariables continueOnError="false" enabled="true" name="EV-AppCertFingerprint">
+  <Source>AccessEntity.AE-GetApp</Source>
+  <VariablePrefix>mtls</VariablePrefix>
+  <XMLPayload>
+    <Variable name="expected.raw" type="string">
+      <XPath>/App/Attributes/Attribute[Name='certFingerprint']/Value/text()</XPath>
+    </Variable>
+  </XMLPayload>
+  <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
+</ExtractVariables>
